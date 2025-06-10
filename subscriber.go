@@ -3,11 +3,12 @@ package subscriber
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	ethclients "github.com/Iwinswap/iwinswap-ethclients"
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
@@ -17,14 +18,19 @@ var (
 	defaultUpdateClientSetInterval = 1 * time.Minute
 )
 
+type ETHClient interface {
+	SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error)
+	BlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error)
+}
+
 type BlockSubscriber struct {
-	getHealthyClients       func() []ethclients.ETHClient
+	getHealthyClients       func() []ETHClient
 	blockByNumberTimeout    time.Duration
 	updateClientSetInterval time.Duration
 	newBlockC               chan *types.Block
 	newBlockReceiverC       chan *types.Block
 	latestBlock             *types.Block
-	clientSet               map[ethclients.ETHClient]struct{}
+	clientSet               map[ETHClient]struct{}
 	cancelFunc              func()
 	closed                  atomic.Bool
 	wg                      sync.WaitGroup
@@ -60,7 +66,7 @@ func (config *SubscriberConfig) applyDefaults() {
 func NewBlockSubscriber(
 	parentContext context.Context,
 	newBlockReceiverC chan *types.Block,
-	getHealthyClients func() []ethclients.ETHClient,
+	getHealthyClients func() []ETHClient,
 	config *SubscriberConfig,
 ) *BlockSubscriber {
 	if config == nil {
@@ -70,7 +76,7 @@ func NewBlockSubscriber(
 	config.applyDefaults()
 	ctx, cancel := context.WithCancel(parentContext)
 	bs := &BlockSubscriber{
-		clientSet:               make(map[ethclients.ETHClient]struct{}),
+		clientSet:               make(map[ETHClient]struct{}),
 		newBlockC:               make(chan *types.Block, config.NewBlockBuffer),
 		newBlockReceiverC:       newBlockReceiverC,
 		updateClientSetInterval: config.UpdateClientSetInterval,
@@ -140,8 +146,8 @@ func (bs *BlockSubscriber) monitorNewBlocks(ctx context.Context) {
 // on subscription error, exit!
 func (bs *BlockSubscriber) subscribeNewBlocks(
 	ctx context.Context, // Manager's lifecycle context
-	client ethclients.ETHClient,
-	deleteKnownClient func(ethclients.ETHClient),
+	client ETHClient,
+	deleteKnownClient func(ETHClient),
 ) {
 	defer bs.wg.Done()
 	defer deleteKnownClient(client)
@@ -231,20 +237,20 @@ func (bs *BlockSubscriber) processNewBlock(
 	}
 }
 
-func (bs *BlockSubscriber) addToClientSet(client ethclients.ETHClient) {
+func (bs *BlockSubscriber) addToClientSet(client ETHClient) {
 	bs.mu.Lock()
 	defer bs.mu.Unlock()
 	bs.clientSet[client] = struct{}{}
 }
 
-func (bs *BlockSubscriber) isKnownClient(client ethclients.ETHClient) bool {
+func (bs *BlockSubscriber) isKnownClient(client ETHClient) bool {
 	bs.mu.RLock()
 	defer bs.mu.RUnlock()
 	_, known := bs.clientSet[client]
 	return known
 }
 
-func (bs *BlockSubscriber) deleteFromClientSet(client ethclients.ETHClient) {
+func (bs *BlockSubscriber) deleteFromClientSet(client ETHClient) {
 	bs.mu.Lock()
 	defer bs.mu.Unlock()
 	delete(bs.clientSet, client)
@@ -266,6 +272,5 @@ func (bs *BlockSubscriber) Close() {
 	if bs.closed.CompareAndSwap(false, true) {
 		bs.cancelFunc()
 		bs.wg.Wait()
-		// clients aren't ours so we don't close them!
 	}
 }

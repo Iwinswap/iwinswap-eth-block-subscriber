@@ -48,9 +48,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Iwinswap/iwinswap-eth-block-subscriber/subscriber"
-	ethclients "github.com/Iwinswap/iwinswap-ethclients"
+	subscriber "github.com/Iwinswap/iwinswap-eth-block-subscriber/subscriber"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 )
 
 type AppLogger struct{}
@@ -67,10 +67,24 @@ func main() {
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
 
-	getHealthyClients := func() []ethclients.ETHClient {
-		// Return a list of clients that satisfy the ethclients.ETHClient interface.
-		// In a real application, this might involve health checks or service discovery.
-		return []ethclients.ETHClient{} // Replace with actual client instances
+	getHealthyClients := func() []subscriber.ETHClient {
+		client1, err := ethclient.DialContext(ctx, "wss://your-mainnet-rpc-url-1")
+		if err != nil {
+			log.Printf("Failed to connect to client1: %v", err)
+		}
+		client2, err := ethclient.DialContext(ctx, "wss://your-mainnet-rpc-url-2")
+		if err != nil {
+			log.Printf("Failed to connect to client2: %v", err)
+		}
+
+		var clients []subscriber.ETHClient
+		if client1 != nil {
+			clients = append(clients, client1)
+		}
+		if client2 != nil {
+			clients = append(clients, client2)
+		}
+		return clients
 	}
 
 	config := &subscriber.SubscriberConfig{
@@ -80,7 +94,7 @@ func main() {
 		Logger:                  &AppLogger{},
 	}
 
-    blockC := make(chan *types.Block, 100)
+	blockC := make(chan *types.Block, 100)
 	s := subscriber.NewBlockSubscriber(ctx, blockC, getHealthyClients, config)
 	log.Println("Block subscriber started.")
 
@@ -110,11 +124,23 @@ func main() {
 | `UpdateClientSetInterval` | How often to refresh the list of healthy clients | `1m`          |
 | `BlockByNumberTimeout`    | Timeout for fetching the full block via RPC      | `10s`         |
 | `NewBlockBuffer`          | Channel buffer size for incoming blocks          | `100`         |
-| `Logger`                  | Custom logger implementing `Logger` interface    | Stdout logger |
+| `Logger`                  | Custom logger implementing Logger interface      | Stdout logger |
 
-### Logger Interface
+---
+
+## Logger and Client Interfaces
+
+The subscriber defines minimal interfaces for flexibility.
 
 ```go
+// The ETHClient interface defines the methods the subscriber needs.
+// The standard `ethclient.Client` from go-ethereum satisfies this automatically.
+type ETHClient interface {
+	SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error)
+	BlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error)
+}
+
+// The Logger interface allows for pluggable logging frameworks.
 type Logger interface {
 	Debug(msg string, args ...any)
 	Info(msg string, args ...any)
@@ -123,7 +149,7 @@ type Logger interface {
 }
 ```
 
-To use a structured logger like Zap or Logrus, simply wrap it to satisfy this interface.
+To use a structured logger like Zap or Logrus, simply wrap it to satisfy the interface.
 
 ---
 
@@ -147,7 +173,7 @@ To use a structured logger like Zap or Logrus, simply wrap it to satisfy this in
 
 ## Contributing
 
-Bug reports and pull requests are welcome at
+Bug reports and pull requests are welcome at:
 [https://github.com/Iwinswap/iwinswap-eth-block-subscriber](https://github.com/Iwinswap/iwinswap-eth-block-subscriber)
 
 ---

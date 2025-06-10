@@ -28,9 +28,9 @@ func (l *NoOpLogger) Error(msg string, args ...any) {}
 type testEnv struct {
 	ctx                   context.Context
 	cancel                context.CancelFunc
-	ethClients            []ethclients.ETHClient
-	subscriptionErrorChs  map[ethclients.ETHClient]chan error
-	getHealthyClientsFunc func() []ethclients.ETHClient
+	ethClients            []ETHClient
+	subscriptionErrorChs  map[ETHClient]chan error
+	getHealthyClientsFunc func() []ETHClient
 }
 
 // setupResilienceTest creates a full mock environment for testing the BlockSubscriber.
@@ -80,8 +80,8 @@ func setupResilienceTest(t *testing.T, numclients int) *testEnv {
 		}
 	}
 
-	var ethClients []ethclients.ETHClient
-	subscriptionErrorChs := make(map[ethclients.ETHClient]chan error)
+	var ethClients []ETHClient
+	subscriptionErrorChs := make(map[ETHClient]chan error)
 
 	for i := 0; i < numclients; i++ {
 		client := ethclients.NewTestETHClient()
@@ -110,7 +110,7 @@ func setupResilienceTest(t *testing.T, numclients int) *testEnv {
 		cancel:               cancel,
 		ethClients:           ethClients,
 		subscriptionErrorChs: subscriptionErrorChs,
-		getHealthyClientsFunc: func() []ethclients.ETHClient {
+		getHealthyClientsFunc: func() []ETHClient {
 			return ethClients // Simple provider that always returns the full list.
 		},
 	}
@@ -121,7 +121,7 @@ func TestNewBlockSubscriber(t *testing.T) {
 		blockSubscriber := NewBlockSubscriber(
 			context.Background(),
 			make(chan *types.Block),
-			func() []ethclients.ETHClient { return nil },
+			func() []ETHClient { return nil },
 			&SubscriberConfig{Logger: &NoOpLogger{}},
 		)
 		blockSubscriber.Close()
